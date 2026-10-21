@@ -23,7 +23,7 @@ exec:
 generate_report: True
 # LLM settings for final report from journal
 report:
-  model: gpt-4o-2024-11-20
+  model: DeepSeek-V4.1-Flash-1017
   temp: 1.0
 
 experiment:
@@ -33,20 +33,23 @@ debug:
   stage4: False
 
 # agent hyperparams
+# 课程适配（CPU-only）：上游默认 num_workers=4 且只在有 GPU 时收缩 worker 数，
+# 结果是无 GPU 时 4 个进程抢同一个 CPU，每个实验都变慢并更易触发 exec.timeout。
+# 这里改为单 worker 串行，并把各阶段迭代次数压到可承受范围。
 agent:
   type: parallel
-  num_workers: 4
+  num_workers: 1
   stages:
-    stage1_max_iters: 20
-    stage2_max_iters: 12
-    stage3_max_iters: 12
-    stage4_max_iters: 18
+    stage1_max_iters: 4
+    stage2_max_iters: 3
+    stage3_max_iters: 3
+    stage4_max_iters: 4
   # how many improvement iterations to run
-  steps: 5 # if stage-specific max_iters are not provided, the agent will use this value for all stages
+  steps: 2 # if stage-specific max_iters are not provided, the agent will use this value for all stages
   # whether to instruct the agent to use CV (set to 1 to disable)
   k_fold_validation: 1
   multi_seed_eval:
-    num_seeds: 3 # should be the same as num_workers if num_workers < 3. Otherwise, set it to be 3.
+    num_seeds: 1 # 课程适配：CPU 上跑 3 个 seed 成本放大 3 倍，先降到 1
   # whether to instruct the agent to generate a prediction function
   expose_prediction: False
   # whether to provide the agent with a preview of the data
@@ -54,26 +57,26 @@ agent:
 
   # LLM settings for coding
   code:
-    model: anthropic.claude-3-5-sonnet-20241022-v2:0
+    model: DeepSeek-V4.1-Flash-1017
     temp: 1.0
     max_tokens: 12000
 
   # LLM settings for evaluating program output / tracebacks
   feedback:
-    model: gpt-4o-2024-11-20
+    model: DeepSeek-V4.1-Flash-1017
     # gpt-4o
     temp: 0.5
     max_tokens: 8192
 
   vlm_feedback:
-    model: gpt-4o-2024-11-20
+    model: DeepSeek-V4.1-Flash-1017
     temp: 0.5
     max_tokens: null
 
   search:
-    max_debug_depth: 3
+    max_debug_depth: 2
     debug_prob: 0.5
-    num_drafts: 3
+    num_drafts: 1
 
   # Options for summarizing findings and selecting the best node
   # If not specified, the default behavior will be used.

@@ -20,6 +20,26 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# 课程适配：上游在多处把辅助模型写死为 "gpt-4o"，改用其他服务商时会 403。
+# 这里改为可由环境变量指定；未设置时保持上游默认值，行为与原来一致。
+DEFAULT_LLM_MODEL = os.environ.get("AISCI_DEFAULT_MODEL", "gpt-4o")
+
+
+def _rel_to_cwd(p) -> str:
+    """把路径转成相对当前工作目录的形式。
+
+    课程适配：当工作目录经由 Windows 联接点（junction）或短路径访问时，
+    Path.resolve() 返回的是真实路径，而 os.getcwd() 仍是访问时的短路径，
+    两者不在同一前缀下，上游的 relative_to() 会抛 ValueError。
+    这里对两边统一 resolve 后再比较；确实取不到相对路径时退回绝对路径。
+    """
+    path = Path(p).resolve()
+    cwd = Path(os.getcwd()).resolve()
+    try:
+        return str(path.relative_to(cwd))
+    except ValueError:
+        return str(path)
+
 node_selection_spec = FunctionSpec(
     name="select_best_implementation",
     description="Select the best implementation based on comprehensive analysis",
@@ -237,9 +257,7 @@ class Node(DataClassJsonMixin):
             "exc_stack": self.exc_stack,
             "analysis": self.analysis,
             "exp_results_dir": (
-                str(Path(self.exp_results_dir).resolve().relative_to(os.getcwd()))
-                if self.exp_results_dir
-                else None
+                _rel_to_cwd(self.exp_results_dir) if self.exp_results_dir else None
             ),
             "metric": {
                 "value": self.metric.value if self.metric else None,
@@ -259,10 +277,7 @@ class Node(DataClassJsonMixin):
             "plots_generated": self.plots_generated,
             "plots": self.plots,
             "plot_paths": (
-                [
-                    str(Path(p).resolve().relative_to(os.getcwd()))
-                    for p in self.plot_paths
-                ]
+                [_rel_to_cwd(p) for p in self.plot_paths]
                 if self.plot_paths
                 else []
             ),
@@ -270,11 +285,7 @@ class Node(DataClassJsonMixin):
                 {
                     **analysis,
                     "plot_path": (
-                        str(
-                            Path(analysis["plot_path"])
-                            .resolve()
-                            .relative_to(os.getcwd())
-                        )
+                        _rel_to_cwd(analysis["plot_path"])
                         if analysis.get("plot_path")
                         else None
                     ),
@@ -468,7 +479,7 @@ class Journal:
 
         try:
             if cfg is None or cfg.agent.get("select_node", None) is None:
-                model = "gpt-4o"
+                model = DEFAULT_LLM_MODEL
                 temperature = 0.3
             else:
                 model = cfg.agent.select_node.model
@@ -541,7 +552,7 @@ class Journal:
                 "2. Common failure patterns and pitfalls to avoid\n"
                 "3. Specific recommendations for future experiments based on both successes and failures"
             ),
-            model=model_kwargs.get("model", "gpt-4o"),
+            model=model_kwargs.get("model", DEFAULT_LLM_MODEL),
             temperature=model_kwargs.get("temp", 0.3)
         )
 
@@ -604,7 +615,7 @@ class Journal:
         stage_summary = query(
             system_message=summary_prompt,
             user_message="Generate a comprehensive summary of the experimental findings in this stage",
-            model=cfg.agent.summary.model if cfg.agent.get("summary", None) else "gpt-4o",
+            model=cfg.agent.summary.model if cfg.agent.get("summary", None) else DEFAULT_LLM_MODEL,
             temperature=cfg.agent.summary.temp if cfg.agent.get("summary", None) else 0.3
         )
 

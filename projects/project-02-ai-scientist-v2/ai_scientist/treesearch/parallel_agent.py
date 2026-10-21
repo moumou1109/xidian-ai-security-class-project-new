@@ -85,7 +85,15 @@ review_func_spec = FunctionSpec(
         "properties": {
             "is_bug": {
                 "type": "boolean",
-                "description": "true if the output log shows that the execution failed or has some bug, otherwise false.",
+                "description": (
+                    "Set true ONLY when the execution log shows a hard failure: a crash, "
+                    "exception/traceback, non-finite (NaN/inf) metrics, or a result that is "
+                    "obviously invalid (e.g. attack success rate nonzero at zero perturbation "
+                    "budget). Conceptual or methodological limitations — a confounded design, "
+                    "a debatable metric definition, or 'this does not prove the hypothesis' — "
+                    "are NOT bugs: set false and still describe them in `summary`. A run that "
+                    "completes and saves its outputs should normally be reported as is_bug=false."
+                ),
             },
             "summary": {
                 "type": "string",
@@ -311,6 +319,10 @@ class MinimalAgent:
             "CRITICAL MODEL INPUT GUIDELINES:",
             "  - Always pay extra attention to the input to the model being properly normalized",
             "  - This is extremely important because the input to the model's forward pass directly affects the output, and the loss function is computed based on the output",
+            "LOCAL ENVIRONMENT CONSTRAINTS (this machine):",
+            "  - NumPy 2.x is installed: `np.trapz` NO LONGER EXISTS, use `np.trapezoid` instead.",
+            "  - PyTorch is a CPU-only build: never call `.cuda()`; keep all tensors float32 and avoid mixing float64/int64 inputs with float32 model weights.",
+            "  - Keep every run under ten minutes on a single CPU process; use small datasets (<= 10000 rows) and small models.",
         ]
         if hasattr(self.cfg.experiment, "num_syn_datasets"):
             num_syn_datasets = self.cfg.experiment.num_syn_datasets
@@ -1178,6 +1190,16 @@ class ParallelAgent:
         if self.num_gpus > 0:
             self.num_workers = min(self.num_workers, self.num_gpus)
             logger.info(f"Limiting workers to {self.num_workers} to match GPU count")
+        else:
+            # 课程适配：上游只在有 GPU 时收缩 worker 数，无 GPU 时仍按配置开 4 个进程。
+            # 这会让 4 个实验进程同时抢同一个 CPU，每个都变慢，并更易触发 exec.timeout。
+            # 这里在 CPU-only 模式下强制串行执行。
+            if self.num_workers != 1:
+                logger.info(
+                    f"No GPU detected: forcing num_workers from {self.num_workers} to 1 "
+                    "to avoid CPU oversubscription"
+                )
+            self.num_workers = 1
 
         self.timeout = self.cfg.exec.timeout
         self.executor = ProcessPoolExecutor(max_workers=self.num_workers)

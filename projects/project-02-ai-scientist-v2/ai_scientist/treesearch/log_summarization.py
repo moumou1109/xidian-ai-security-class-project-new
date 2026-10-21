@@ -269,7 +269,10 @@ def annotate_history(journal, cfg=None):
                     if cfg.agent.get("summary", None) is not None:
                         model = cfg.agent.summary.model
                     else:
-                        model = "gpt-4o-2024-08-06"
+                        # 课程适配：上游写死 gpt-4o-2024-08-06，改用其他服务商会 403
+                        model = os.environ.get(
+                            "AISCI_DEFAULT_MODEL", "gpt-4o-2024-08-06"
+                        )
                     client = get_ai_client(model)
                     response = get_response_from_llm(
                         overall_plan_summarizer_prompt.format(
@@ -341,7 +344,8 @@ def overall_summarize(journals, cfg=None):
             if cfg.agent.get("summary", None) is not None:
                 model = cfg.agent.summary.get("model", "")
             else:
-                model = "gpt-4o-2024-08-06"
+                # 课程适配：同上，允许通过环境变量覆盖
+                model = os.environ.get("AISCI_DEFAULT_MODEL", "gpt-4o-2024-08-06")
             client = get_ai_client(model)
             summary_json = get_stage_summary(journal, stage_name, model, client)
             return summary_json

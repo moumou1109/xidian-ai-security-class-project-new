@@ -194,8 +194,12 @@ if __name__ == "__main__":
 
     idea = ideas[args.idea_idx]
 
-    date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    idea_dir = f"experiments/{date}_{idea['Name']}_attempt_{args.attempt_id}"
+    # 课程适配：Windows 默认路径上限 260 字符。上游用完整时间戳 + 完整想法名
+    # 生成实验目录，叠加 logs/experiment_results 与进程目录后会超限（WinError 206，
+    # 表现为绘图或保存产物失败）。这里压缩时间戳格式并截断想法名。
+    date = datetime.now().strftime("%Y%m%d_%H%M%S")
+    idea_name = str(idea["Name"])[:16]
+    idea_dir = f"experiments/{date}_{idea_name}_attempt_{args.attempt_id}"
     print(f"Results will be saved in {idea_dir}")
     os.makedirs(idea_dir, exist_ok=True)
 

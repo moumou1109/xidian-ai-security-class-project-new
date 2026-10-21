@@ -88,8 +88,38 @@ python -X utf8 ai_scientist/perform_ideation_temp_free.py \
 
 ## 7. 已知限制
 
-- **未跑实验阶段**：`launch_scientist_bfts.py` 需要执行模型生成的训练代码，本机无 NVIDIA GPU，CPU 下极易触发 `exec.timeout: 3600` 超时，本次未验证。
+- **实验只跑到 Stage 3**：Stage 1–3 已完成，Stage 4（消融）因 LLM 服务反复超时未执行，详见 [EXPERIMENT-REPORT.md](EXPERIMENT-REPORT.md)。
 - **未启用文献检索**：无 `S2_API_KEY`，想法中的 Related Work 来自模型自身知识，未经检索核验，存在失实风险。
-- **样本量小**：`--max-num-generations 1 --num-reflections 2`，只验证流程可通，不代表想法质量。
+- **样本量小**：`--max-num-generations 1 --num-reflections 2`，只验证流程可通，不代表想法质量；实验阶段 `num_seeds=1`，无置信区间。
 - **仓库为部分克隆**：因完整仓库 814 MB、本机到 GitHub 实测约 59 KB/s，使用 `--depth 1 --filter=blob:none --sparse` 只检出本项目目录，其他项目目录本地不存在。
 - 模型输出格式不稳定，同一条命令多次运行可能得到不同结构与质量的结果。
+
+---
+
+## 8. 实验阶段补充（2026-10-21 18:04–19:52）
+
+详细结果见 [EXPERIMENT-REPORT.md](EXPERIMENT-REPORT.md)。本节只记录为跑通实验新增的改动。
+
+### 8.1 实验阶段新增的代码适配
+
+| 文件 | 改动 | 原因 |
+| --- | --- | --- |
+| `bfts_config.yaml` | `num_workers: 1`、各阶段迭代 4/3/3/4、`steps: 2`、`num_seeds: 1`、全部模型改为校内模型 | CPU 串行 + 控制成本 |
+| `ai_scientist/treesearch/parallel_agent.py` | CPU-only 时强制 `num_workers = 1` | 上游只在有 GPU 时收缩 worker，无 GPU 时 4 进程抢同一 CPU |
+| `ai_scientist/treesearch/journal.py` | 新增 `DEFAULT_LLM_MODEL`，替换 3 处硬编码 `gpt-4o` | 上游写死 OpenAI 模型名，换服务商直接 403 |
+| `ai_scientist/treesearch/log_summarization.py` | 同上，替换 2 处硬编码 `gpt-4o-2024-08-06` | 同上 |
+| `ai_scientist/treesearch/journal.py` | 新增 `_rel_to_cwd()` | Windows 短路径/junction 下 `Path.resolve()` 与 `os.getcwd()` 前缀不一致，`relative_to` 抛 ValueError |
+| `ai_scientist/treesearch/parallel_agent.py` | `submit_review` 的 `is_bug` 口径改为只认执行崩溃/NaN | 模型原先把"方法论缺陷"也判为 bug，导致 Stage 1 永远凑不出可用节点 |
+| `ai_scientist/treesearch/parallel_agent.py` | 提示词补充本机约束（NumPy 2.x 无 `np.trapz`、PyTorch 为 CPU build） | 减少模型生成不兼容代码 |
+
+### 8.2 环境侧关键配置
+
+`backend_openai.py` 使用裸 `openai.OpenAI()`，**只读取 `OPENAI_BASE_URL` 环境变量**，不认 `AISCI_BASE_URL`。两者都设置才能让实验阶段连到校内服务。
+
+### 8.3 Windows 路径长度问题
+
+实验产物路径叠加 `experiments/<时间>_<想法名>/logs/0-run/experiment_results/experiment_<hash>_proc_<pid>/` 后超过 260 字符，触发 `WinError 206`，表现为绘图或中间产物保存失败。
+
+处理办法：**缩短真实路径**（仓库放在 `E:\ai`）+ `launch_scientist_bfts.py` 中把时间戳改为 `%Y%m%d_%H%M%S`、想法名截断到 16 字符。
+
+> 注意：用 junction（`E:\aisec`）指向长路径**无效** —— Python 的 `Path.resolve()` 会展开成真实路径，长度问题依旧。
