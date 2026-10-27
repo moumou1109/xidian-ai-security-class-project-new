@@ -1,0 +1,14 @@
+{
+  "stage_1_initial_implementation_1_preliminary": {
+    "nodes": 2,
+    "good": 1
+  },
+  "stage_2_baseline_tuning_1_first_attempt": {
+    "nodes": 4,
+    "good": 4
+  },
+  "stage_3_creative_research_1_first_attempt": {
+    "nodes": 3,
+    "good": 2
+  }
+}

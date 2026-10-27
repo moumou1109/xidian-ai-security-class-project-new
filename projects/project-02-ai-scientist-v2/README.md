@@ -4,6 +4,15 @@
 
 [课程任务](COURSE.md) · [课程总说明](../../README.md) · [上游原始 README](README.original.md) · [许可证](LICENSE)
 
+## 本作业的产出
+
+- [COURSE-NOTES.md](COURSE-NOTES.md)：环境版本与运行命令、为适配校内模型服务与本机环境所做的 **12 处改动**（含失败排查）
+- [EXPERIMENT-REPORT.md](EXPERIMENT-REPORT.md)：实验设计、Stage 1–3 结果、**结论反转**的分析、修改前后行为对照表、已知局限
+- [report-data/](report-data/)：可随仓库提交的指标表、6 张关键图与重新生成脚本
+- 一键校验报告数字：`python -X utf8 tools/verify_results.py`（24 项检查）
+
+> 本次作业在 **Windows 11 + CPU-only**（无 NVIDIA GPU）环境完成，与下文"需要 Linux + NVIDIA GPU"的上游要求不同。替代做法与踩坑记录见 COURSE-NOTES.md 第 8 节。
+
 ## 1. 环境要求
 
 - 上游面向 **Linux + NVIDIA GPU + CUDA/PyTorch**；Windows 用户使用具备 GPU 支持的 Linux 环境或服务器。

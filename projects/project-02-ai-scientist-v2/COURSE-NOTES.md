@@ -16,7 +16,11 @@
 | Git | 2.55.0.windows.3 |
 | 模型服务 | 校内 OpenAI 兼容服务 `https://hyymodels.xidian.edu.cn/v1`，模型 `DeepSeek-V4.1-Flash-1017` |
 
-与上游要求的差异：上游要求 Linux + NVIDIA GPU + CUDA + PyTorch。本机不满足，因此**本次只运行想法生成阶段**（不涉及训练），实验树搜索阶段留待后续。
+与上游要求的差异：上游要求 Linux + NVIDIA GPU + CUDA + PyTorch。本机不满足，处理方式是分阶段降级：
+
+- **想法生成阶段**只做 API 调用，纯 CPU 可运行，已完整跑通（第 5 节）。
+- **实验树搜索阶段**需要 PyTorch，本机改用 CPU 版**串行**运行，已完成 Stage 1–3；Stage 4（消融）因模型服务反复 10 分钟级超时未执行（第 8 节、[EXPERIMENT-REPORT.md](EXPERIMENT-REPORT.md)）。
+- **论文生成阶段**未运行，启动时使用 `--skip_writeup --skip_review`。
 
 ## 2. 环境创建与依赖安装
 
@@ -26,13 +30,20 @@ conda activate course-scientist-v2
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-`requirements.txt` 不包含 PyTorch，所以想法生成阶段在纯 CPU 环境可运行。实测安装 74 个包（含 `openai 3.35.1`、`anthropic 1.17.0`、`backoff 2.2.1`）。
+`requirements.txt` 不包含 PyTorch，所以想法生成阶段在纯 CPU 环境即可运行。实测安装 74 个包（含 `openai 3.35.1`、`anthropic 1.17.0`、`backoff 2.2.1`）。
 
-**未安装 PyTorch**：实验阶段才需要，届时应安装 CPU 版：
+**实验阶段另有 3 个额外依赖**（想法生成阶段不需要，以下为实际安装记录）：
 
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# PyTorch CPU 版：本机无 CUDA，必须装 CPU build，实测 torch 2.14.1+cpu
+pip install torch --find-links https://mirrors.aliyun.com/pytorch-wheels/cpu/ -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 实验代码生成的脚本依赖
+pip install scikit-learn -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 缺失时 import 链直接失败
+pip install pymupdf -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
+
+实测最终版本：`torch 2.14.1+cpu`、`numpy 2.4.6`、`pandas 3.0.6`、`scikit-learn 1.9.1`，`torch.cuda.is_available() == False`。
 
 ## 3. 模型配置
 
@@ -46,7 +57,7 @@ export PYTHONUTF8=1                            # 中文 Windows 必需，见下�
 
 ## 4. 为跑通所做的代码适配（相对上游的改动）
 
-上游只支持写死的几家模型服务商，且假设 Linux/UTF-8 环境。为在校内服务 + 中文 Windows 上运行，共做 5 处改动：
+上游只支持写死的几家模型服务商，且假设 Linux/UTF-8 环境。为在校内服务 + 中文 Windows 上运行，共做 **12 处**改动（本节 5 处 + 第 8.1 节 7 处）：
 
 | 文件 | 改动 | 原因 |
 | --- | --- | --- |
@@ -78,6 +89,21 @@ python -X utf8 ai_scientist/perform_ideation_temp_free.py \
 
 使用的研究主题（`course_topic.md`）已改写为人工智能安全方向：轻量表格分类器在特征扰动攻击下的鲁棒性，并明确约束为 CPU 单进程、10 分钟内、不超过一万行数据。
 
+### 5.1 实验阶段的启动命令
+
+想法生成只是第 1 步。用生成的想法驱动实验树搜索（等价于课程要求的"最小示例结果"的实验部分）：
+
+```bash
+# 前置：OPENAI_BASE_URL 与 AISCI_BASE_URL 必须都指向校内服务，见 8.2
+python -X utf8 launch_scientist_bfts.py \
+  --load_ideas ai_scientist/ideas/course_topic.json \
+  --idea_idx 0 \
+  --skip_writeup --skip_review \
+  --model_agg_plots DeepSeek-V4.1-Flash-1017
+```
+
+实测耗时 108 分钟，产出 9 个节点（8 个有效）、73 张图，结果见 [EXPERIMENT-REPORT.md](EXPERIMENT-REPORT.md)。
+
 ## 6. 复现步骤
 
 1. 按第 2 节创建环境并安装依赖。
@@ -85,6 +111,9 @@ python -X utf8 ai_scientist/perform_ideation_temp_free.py \
 3. 确认 `ai_scientist/ideas/course_topic.md` 存在。
 4. 执行第 5 节命令，检查同目录生成 `course_topic.json`。
 5. 用 `python -c "import json;print(len(json.load(open('ai_scientist/ideas/course_topic.json',encoding='utf-8'))))"` 验证条数。
+6. **（实验阶段）** 按第 2 节装 PyTorch CPU 版、`scikit-learn`、`pymupdf`，并按 8.2 额外设置 `OPENAI_BASE_URL`；否则实验阶段的模型请求会打到官方地址并无限重试。
+7. 执行 5.1 节命令，产物在 `experiments/<时间戳>_<想法名>_attempt_0/`。
+8. 按第 9 节运行校验脚本，确认报告数字与提交的指标表一致。
 
 ## 7. 已知限制
 
@@ -123,3 +152,26 @@ python -X utf8 ai_scientist/perform_ideation_temp_free.py \
 处理办法：**缩短真实路径**（仓库放在 `E:\ai`）+ `launch_scientist_bfts.py` 中把时间戳改为 `%Y%m%d_%H%M%S`、想法名截断到 16 字符。
 
 > 注意：用 junction（`E:\aisec`）指向长路径**无效** —— Python 的 `Path.resolve()` 会展开成真实路径，长度问题依旧。
+
+---
+
+## 9. 结果的证据与自动校验
+
+`experiments/` 被 `.gitignore` 排除，原始运行产物不会随仓库提交，导致报告里的数字无法被他人核对。为此本作业额外提交两样东西：
+
+| 路径 | 作用 |
+| --- | --- |
+| `report-data/metrics.csv` | 从 `journal.json` 提取的 370 行扁平指标表（stage / node / metric / dataset / value） |
+| `report-data/summary.json` | 各 stage 节点数与有效节点数 |
+| `report-data/figures/*.png` | 6 张关键图（含 Stage 1 的"反转前"与 Stage 3 的"反转后"） |
+| `tools/extract_metrics.py` | 重新从 `experiments/` 生成上述指标表（只依赖标准库） |
+| `tools/verify_results.py` | 把报告中的量化断言逐条与 CSV 比对，24 项全部 PASS 才算一致 |
+
+```bash
+python -X utf8 tools/verify_results.py
+# 期望输出末两行：
+#   共 24 项检查，通过 24 项，失败 0 项
+#   报告中的量化结论与提交的指标表一致。
+```
+
+校验覆盖：节点数与有效节点数、三个模型族的 ASR 序列（0.5788/0.6466/0.7751/0.9917 等）、RRES 四组数值（−0.4140 / −0.4127 / −0.4048 / −0.4246）、Stage 1 与 Stage 3 的趋势方向相反、3 个真实数据集的 ASR 区间。任一项改了报告却不同步改数据，脚本会返回非 0 退出码。
